@@ -1,0 +1,112 @@
+[gd_scene load_steps=8 format=2]
+
+[ext_resource path="res://scripts/car.gd" type="Script" id=1]
+[ext_resource path="res://resources/tunings/test_front.tres" type="Resource" id=2]
+[ext_resource path="res://resources/tunings/test_rear.tres" type="Resource" id=3]
+
+[sub_resource type="BoxShape" id=1]
+extents = Vector3( 0.94878, 0.399104, 0.49639 )
+
+[sub_resource type="CubeMesh" id=2]
+size = Vector3( 1.4, 0.8, 1 )
+
+[sub_resource type="CubeMesh" id=4]
+size = Vector3( 1.4, 0.535, 1 )
+
+[sub_resource type="CylinderMesh" id=3]
+top_radius = 0.25
+bottom_radius = 0.25
+height = 0.12
+radial_segments = 24
+rings = 1
+
+[node name="TestCar" type="VehicleBody"]
+mass = 105.61
+can_sleep = false
+linear_damp = 0.2
+angular_damp = 0.2
+script = ExtResource( 1 )
+wheel_br = NodePath("Wheel_BR")
+wheel_bl = NodePath("Wheel_BL")
+wheel_fr = NodePath("Wheel_FR")
+wheel_fl = NodePath("Wheel_FL")
+front_tuning = ExtResource( 2 )
+rear_tuning = ExtResource( 3 )
+
+[node name="CollisionShape" type="CollisionShape" parent="."]
+transform = Transform( 1.31134e-07, 0, -1, 0, 1, 0, 1, 0, 1.31134e-07, 0, 0.308507, 0.0143123 )
+shape = SubResource( 1 )
+
+[node name="MeshInstance" type="MeshInstance" parent="."]
+transform = Transform( 1.31134e-07, 0, -1, 0, 1, 0, 1, 0, 1.31134e-07, 0, 0.308507, -0.211342 )
+mesh = SubResource( 2 )
+material/0 = null
+
+[node name="MeshInstance2" type="MeshInstance" parent="."]
+transform = Transform( 1.31134e-07, 0, -1, 0, 1, 0, 1, 0, 1.31134e-07, 0, 0.18095, 0.262235 )
+mesh = SubResource( 4 )
+material/0 = null
+
+[node name="Wheel_BL" type="VehicleWheel" parent="."]
+transform = Transform( 1, 0, 2.94055e-07, 0, 1, 0, -2.94055e-07, 0, 1, 0.55, -0.169038, -0.725 )
+use_as_traction = true
+wheel_radius = 0.25
+wheel_rest_length = 0.08
+wheel_friction_slip = 1.0
+suspension_travel = 0.15
+suspension_stiffness = 100.0
+damping_compression = 0.88
+damping_relaxation = 0.95
+
+[node name="MeshInstance" type="MeshInstance" parent="Wheel_BL"]
+transform = Transform( -1.62921e-07, -1, 0, 1, -1.62921e-07, 0, 0, 0, 1, 0.0252162, 0, 0 )
+mesh = SubResource( 3 )
+material/0 = null
+
+[node name="Wheel_BR" type="VehicleWheel" parent="."]
+transform = Transform( 1, 0, 2.94055e-07, 0, 1, 0, -2.94055e-07, 0, 1, -0.55, -0.169, -0.725 )
+use_as_traction = true
+wheel_radius = 0.25
+wheel_rest_length = 0.08
+wheel_friction_slip = 1.0
+suspension_travel = 0.15
+suspension_stiffness = 100.0
+damping_compression = 0.88
+damping_relaxation = 0.95
+
+[node name="MeshInstance" type="MeshInstance" parent="Wheel_BR"]
+transform = Transform( -1.62921e-07, -1, 0, 1, -1.62921e-07, 0, 0, 0, 1, -0.025, 0, 0 )
+mesh = SubResource( 3 )
+material/0 = null
+
+[node name="Wheel_FL" type="VehicleWheel" parent="."]
+transform = Transform( 1, 0, 2.94055e-07, 0, 1, 0, -2.94055e-07, 0, 1, 0.55, -0.169038, 0.725 )
+use_as_steering = true
+wheel_radius = 0.25
+wheel_rest_length = 0.08
+wheel_friction_slip = 1.0
+suspension_travel = 0.15
+suspension_stiffness = 100.0
+damping_compression = 0.88
+damping_relaxation = 0.95
+
+[node name="MeshInstance" type="MeshInstance" parent="Wheel_FL"]
+transform = Transform( -1.62921e-07, -1, 0, 1, -1.62921e-07, 0, 0, 0, 1, 0.0252162, 0, 0 )
+mesh = SubResource( 3 )
+material/0 = null
+
+[node name="Wheel_FR" type="VehicleWheel" parent="."]
+transform = Transform( 1, 0, 2.94055e-07, 0, 1, 0, -2.94055e-07, 0, 1, -0.55, -0.169, 0.725 )
+use_as_steering = true
+wheel_radius = 0.25
+wheel_rest_length = 0.08
+wheel_friction_slip = 1.0
+suspension_travel = 0.15
+suspension_stiffness = 100.0
+damping_compression = 0.88
+damping_relaxation = 0.95
+
+[node name="MeshInstance" type="MeshInstance" parent="Wheel_FR"]
+transform = Transform( -1.62921e-07, -1, 0, 1, -1.62921e-07, 0, 0, 0, 1, -0.025, 0, 0 )
+mesh = SubResource( 3 )
+material/0 = null

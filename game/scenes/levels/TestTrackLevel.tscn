@@ -1,0 +1,57 @@
+[gd_scene load_steps=6 format=2]
+
+[ext_resource path="res://scenes/prefabs/cars/TestCar.tscn" type="PackedScene" id=1]
+[ext_resource path="res://scenes/tracks/TestTrack.tscn" type="PackedScene" id=2]
+[ext_resource path="res://scenes/ui/windows/HandlingTuningWindow.tscn" type="PackedScene" id=3]
+[ext_resource path="res://resources/tunings/test_front.tres" type="Resource" id=4]
+
+[sub_resource type="GDScript" id=1]
+script/source = "extends Label
+
+export(NodePath) var car
+
+var output_format = \\
+\"\"\"FL RPM: {fl_rpm}, skid: {fl_skid} {fl_contact}
+FR RPM: {fr_rpm}, skid: {fr_skid} {fr_contact}
+BL RPM: {bl_rpm}, skid: {bl_skid} {bl_contact}
+BR RPM: {br_rpm}, skid: {br_skid} {br_contact}\"\"\"
+
+func _ready():
+	car = get_node(car)
+
+func _physics_process(_delta):
+	set_text(output_format.format({\\
+		\"fl_rpm\": car.wheel_fl.get_rpm(), \"fl_skid\": car.wheel_fl.get_skidinfo(), \"fl_contact\": \"CONTACT\" if car.wheel_fl.is_in_contact() else \"\",\\
+		\"fr_rpm\": car.wheel_fr.get_rpm(), \"fr_skid\": car.wheel_fr.get_skidinfo(), \"fr_contact\": \"CONTACT\" if car.wheel_fr.is_in_contact() else \"\",\\
+		\"bl_rpm\": car.wheel_bl.get_rpm(), \"bl_skid\": car.wheel_bl.get_skidinfo(), \"bl_contact\": \"CONTACT\" if car.wheel_bl.is_in_contact() else \"\",\\
+		\"br_rpm\": car.wheel_br.get_rpm(), \"br_skid\": car.wheel_br.get_skidinfo(), \"br_contact\": \"CONTACT\" if car.wheel_br.is_in_contact() else \"\"\\
+		}))
+"
+
+[node name="Spatial" type="Spatial"]
+
+[node name="TestTrack" parent="." instance=ExtResource( 2 )]
+
+[node name="TestCar" parent="." instance=ExtResource( 1 )]
+transform = Transform( -0.999856, 0, 0.0169463, 0, 1, 0, -0.0169463, 0, -0.999856, 1.47295, 1.70124, -0.406423 )
+
+[node name="Camera" type="Camera" parent="TestCar"]
+transform = Transform( -1, 7.55629e-08, -3.16959e-07, 0, 0.972739, 0.231901, 3.25841e-07, 0.231901, -0.972739, 0, 1.604, -3.542 )
+current = true
+
+[node name="WheelDebugText" type="Label" parent="."]
+margin_right = 40.0
+margin_bottom = 14.0
+custom_colors/font_color_shadow = Color( 0, 0, 0, 1 )
+text = "FR: rpm: 500 skid: 0.7
+FR: rpm: 500 skid: 0.7
+FR: rpm: 500 skid: 0.7
+FR: rpm: 500 skid: 0.7"
+script = SubResource( 1 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+car = NodePath("../TestCar")
+
+[node name="HandlingTuningWindow" parent="." instance=ExtResource( 3 )]
+base_tuning = ExtResource( 4 )

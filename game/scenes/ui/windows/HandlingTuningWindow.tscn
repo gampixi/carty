@@ -1,0 +1,147 @@
+[gd_scene load_steps=3 format=2]
+
+[ext_resource path="res://scenes/ui/controls/LabeledHSlider.tscn" type="PackedScene" id=1]
+
+[sub_resource type="GDScript" id=1]
+script/source = "extends WindowDialog
+
+onready var slider_slip = $VBoxContainer/SlipSlider/HSlider
+onready var slider_roll = $VBoxContainer/RollSlider/HSlider
+onready var slider_rest = $VBoxContainer/RestSlider/HSlider
+onready var slider_travel = $VBoxContainer/TravelSlider/HSlider
+onready var slider_stiffness = $VBoxContainer/StiffnessSlider/HSlider
+onready var slider_max_force = $VBoxContainer/MaxForceSlider/HSlider
+onready var slider_compression = $VBoxContainer/CompressionSlider/HSlider
+onready var slider_relaxation = $VBoxContainer/RelaxationSlider/HSlider
+
+export(NodePath) var car
+export(Resource) var base_tuning
+
+func _ready():
+	car = get_node(car)
+	popup()
+
+func _create_tuning():
+	var tune = base_tuning.duplicate()
+	tune.slip = slider_slip.value
+	tune.roll = slider_roll.value
+	tune.rest = slider_rest.value
+	tune.travel = slider_travel.value
+	tune.stiffness = slider_stiffness.value
+	tune.max_force = slider_max_force.value
+	tune.compression = slider_compression.value
+	tune.relaxation = slider_relaxation.value
+	return tune
+
+func _on_ApplyFrontButton_pressed():
+	car.set_front_tuning(_create_tuning())
+
+
+func _on_ApplyRearButton_pressed():
+	car.set_rear_tuning(_create_tuning())
+
+
+func _on_HandlingTuningWindow_about_to_show():
+	var tune = car.front_tuning
+	slider_slip.value = tune.slip
+	slider_roll.value = tune.roll
+	slider_rest.value = tune.rest
+	slider_travel.value = tune.travel
+	slider_stiffness.value = tune.stiffness
+	slider_max_force.value = tune.max_force
+	slider_compression.value = tune.compression
+	slider_relaxation.value = tune.relaxation
+"
+
+[node name="HandlingTuningWindow" type="WindowDialog"]
+margin_top = 23.0
+margin_right = 247.0
+margin_bottom = 520.0
+popup_exclusive = true
+window_title = "Handling Tuning"
+script = SubResource( 1 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+car = NodePath("../TestCar")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+anchor_right = 1.0
+anchor_bottom = 0.025
+margin_left = 10.0
+margin_top = 10.0
+margin_right = -10.0
+margin_bottom = 75.0
+grow_horizontal = 2
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="SlipSlider" parent="VBoxContainer" instance=ExtResource( 1 )]
+margin_right = 227.0
+var_name = "Traction Slip"
+
+[node name="RollSlider" parent="VBoxContainer" instance=ExtResource( 1 )]
+margin_top = 54.0
+margin_right = 227.0
+margin_bottom = 104.0
+var_name = "Roll Influence"
+
+[node name="RestSlider" parent="VBoxContainer" instance=ExtResource( 1 )]
+margin_top = 108.0
+margin_right = 227.0
+margin_bottom = 158.0
+var_name = "Rest Length"
+min_value = 0.01
+max_value = 0.25
+
+[node name="TravelSlider" parent="VBoxContainer" instance=ExtResource( 1 )]
+margin_top = 162.0
+margin_right = 227.0
+margin_bottom = 212.0
+var_name = "Suspension Travel"
+min_value = 0.01
+max_value = 0.5
+
+[node name="StiffnessSlider" parent="VBoxContainer" instance=ExtResource( 1 )]
+margin_top = 216.0
+margin_right = 227.0
+margin_bottom = 266.0
+var_name = "Suspension Stiffness"
+min_value = 10.0
+max_value = 250.0
+
+[node name="MaxForceSlider" parent="VBoxContainer" instance=ExtResource( 1 )]
+margin_top = 270.0
+margin_right = 227.0
+margin_bottom = 320.0
+var_name = "Suspension Max Force"
+min_value = 100.0
+max_value = 10000.0
+
+[node name="CompressionSlider" parent="VBoxContainer" instance=ExtResource( 1 )]
+margin_top = 324.0
+margin_right = 227.0
+margin_bottom = 374.0
+var_name = "Compression Damping"
+
+[node name="RelaxationSlider" parent="VBoxContainer" instance=ExtResource( 1 )]
+margin_top = 378.0
+margin_right = 227.0
+margin_bottom = 428.0
+var_name = "Relaxation Damping"
+
+[node name="ApplyFrontButton" type="Button" parent="VBoxContainer"]
+margin_top = 432.0
+margin_right = 227.0
+margin_bottom = 452.0
+text = "Apply to front axle"
+
+[node name="ApplyRearButton" type="Button" parent="VBoxContainer"]
+margin_top = 456.0
+margin_right = 227.0
+margin_bottom = 476.0
+text = "Apply to rear axle"
+[connection signal="about_to_show" from="." to="." method="_on_HandlingTuningWindow_about_to_show"]
+[connection signal="pressed" from="VBoxContainer/ApplyFrontButton" to="." method="_on_ApplyFrontButton_pressed"]
+[connection signal="pressed" from="VBoxContainer/ApplyRearButton" to="." method="_on_ApplyRearButton_pressed"]

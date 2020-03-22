@@ -1,0 +1,14 @@
+[gd_resource type="Resource" load_steps=2 format=2]
+
+[ext_resource path="res://scripts/resources/axle_tuning.gd" type="Script" id=1]
+
+[resource]
+script = ExtResource( 1 )
+roll = 0.1
+slip = 1.0
+rest = 0.08
+travel = 0.15
+stiffness = 100
+max_force = 6000
+compression = 0.88
+relaxation = 0.95
