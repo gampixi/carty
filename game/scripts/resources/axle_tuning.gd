@@ -1,5 +1,7 @@
 extends Resource
 
+class_name AxleTuning
+
 export var roll = 0.1
 export var slip = 1.0
 export var rest = 0.08

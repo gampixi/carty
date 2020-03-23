@@ -1,5 +1,7 @@
 extends VehicleBody
 
+class_name Car
+
 export(NodePath) var wheel_br
 export(NodePath) var wheel_bl
 export(NodePath) var wheel_fr
@@ -11,6 +13,12 @@ var rear_axle
 export(Resource) var front_tuning
 export(Resource) var rear_tuning
 export(Resource) var power_tuning
+
+var _steer_gain = 5
+
+var steer_dir = 0
+var throttle = 0
+var brakes = 0
 
 func _ready():
 	wheel_br = get_node(wheel_br)
@@ -43,23 +51,49 @@ func set_front_tuning(tuning):
 func set_rear_tuning(tuning):
 	rear_tuning = tuning
 	_set_axle_tuning(tuning, rear_axle)
+	
+func get_speed():
+	var p = 0.0
+	for wheel in rear_axle:
+		p += pow(wheel.get_rpm(), 2)
+	p = sqrt(p)
+	return ((p*2*PI*rear_axle[0].wheel_radius)/60)*3.6 #P is 2pi*radius meters per minute
 
-func _physics_process(_delta):
+func _physics_process(delta):
 	if Input.is_action_pressed("accelerate"):
-		engine_force = 150
-	elif Input.is_action_pressed("brake"):
-		if(wheel_br.get_rpm() > 5):
-			brake = 20
-			engine_force = 0
+		throttle += power_tuning.throttle_gain(get_speed()) * delta
+	else:
+		throttle -= power_tuning.throttle_release * delta
+	
+	if Input.is_action_pressed("brake"):
+		brakes += power_tuning.brake_gain * delta
+	else:
+		brakes -= power_tuning.brake_release * delta
+	
+	if Input.is_action_pressed("steer_right"):
+		steer_dir -= _steer_gain * delta
+	elif Input.is_action_pressed("steer_left"):
+		steer_dir += _steer_gain * delta
+	else:
+		if steer_dir < -0.1:
+			steer_dir += _steer_gain * delta
+		elif steer_dir > 0.1:
+			steer_dir -= _steer_gain * delta
+		else:
+			steer_dir = 0
+	
+	throttle = clamp(throttle, 0, 1)
+	brakes = clamp(brakes, 0, 1)
+	steer_dir = clamp(steer_dir, -1, 1)
+	
+	engine_force = power_tuning.power(get_speed(), throttle)
+	brake = power_tuning.brake_power * brakes
+	
+	if Input.is_action_pressed("brake"):
+		if(wheel_br.get_rpm() > 3):
+			brake = power_tuning.brake_power * brakes
 		else:
 			brake = 0
-			engine_force = -50
-	else:
-		engine_force = 0
-		brake = 0
+			engine_force = -power_tuning.reverse_power
 		
-	steering = 0
-	if Input.is_action_pressed("steer_right"):
-		steering -= 0.4;
-	if Input.is_action_pressed("steer_left"):
-		steering += 0.4;
+	steering = 0.4 * steer_dir

@@ -19,10 +19,10 @@ adjustment_brightness = 2.14
 adjustment_contrast = 0.28
 adjustment_saturation = 3.4
 
-[sub_resource type="VisualShaderNodeColorConstant" id=4]
+[sub_resource type="VisualShaderNodeColorConstant" id=3]
 constant = Color( 0.195313, 0.195313, 0.195313, 1 )
 
-[sub_resource type="VisualShader" id=5]
+[sub_resource type="VisualShader" id=4]
 code = "shader_type spatial;
 
 
@@ -48,14 +48,14 @@ void light() {
 }
 "
 graph_offset = Vector2( -262, 87 )
-nodes/fragment/2/node = SubResource( 4 )
+nodes/fragment/2/node = SubResource( 3 )
 nodes/fragment/2/position = Vector2( 240, 160 )
 nodes/fragment/connections = PoolIntArray( 2, 0, 0, 0 )
 
-[sub_resource type="ShaderMaterial" id=6]
-shader = SubResource( 5 )
+[sub_resource type="ShaderMaterial" id=5]
+shader = SubResource( 4 )
 
-[sub_resource type="Curve3D" id=3]
+[sub_resource type="Curve3D" id=6]
 _data = {
 "points": PoolVector3Array( 0, 0, 0, 0, 0, 0, -1.00454, 0.0210471, -26.9592, 0, 0, 0, 0, 0, 0, -6.00454, 0.0210471, -28.9592, 0, 0, 0, 0, 0, 0, -14.0045, 0.0210471, -31.9592, 0, 0, 0, 0, 0, 0, -16.0045, 0.0210471, -20.9592, 0, 0, 0, 0, 0, 0, -20.0045, 0.0210471, -18.9592, 0, 0, 0, 0, 0, 0, -22.0045, 0.0210471, -14.9592, 0, 0, 0, 0, 0, 0, -31.0045, 0.0210471, -10.9592, 0, 0, 0, 0, 0, 0, -26.0045, 0.0210471, -4.95918, 0, 0, 0, 0, 0, 0, -18.0045, 0.0210471, -7.95918, 0, 0, 0, 0, 0, 0, -13.0045, 0.0210471, -7.95918, 0, 0, 0, 0, 0, 0, -10.3059, 0.153913, -4.75367, 0, 0, 0, 0, 0, 0, -10.0424, 0, -1.36163, 0, 0, 0, 0, 0, 0, -8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6.99546, 0.0210471, -3.95918, 0, 0, 0, 0, 0, 0, 6.99546, 0.0210471, -10.9592, 0, 0, 0, 0, 0, 0, 2.99546, 0.0210471, -15.9592, 0, 0, 0, 0, 0, 0, 3.99546, 0.0210471, -19.9592, 0, 0, 0, 0, 0, 0, 3.99546, 0.0210471, -24.9592, 0, 0, 0, 0, 0, 0, -1.00454, 0.0210471, -26.9592 ),
 "tilts": PoolRealArray( 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 )
@@ -108,7 +108,7 @@ shadow_enabled = true
 shadow_contact = 0.3
 
 [node name="CSGCombiner" type="CSGCombiner" parent="."]
-material_override = SubResource( 6 )
+material_override = SubResource( 5 )
 use_collision = true
 
 [node name="CSGPolygon" type="CSGPolygon" parent="CSGCombiner"]
@@ -124,14 +124,14 @@ path_joined = false
 
 [node name="Path" type="Path" parent="."]
 transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 0.00453854, -0.0210471, -0.0408227 )
-curve = SubResource( 3 )
+curve = SubResource( 6 )
 
 [node name="CSGCombiner2" type="CSGCombiner" parent="."]
 material_override = SubResource( 9 )
 use_collision = true
 
 [node name="CSGBox" type="CSGBox" parent="CSGCombiner2"]
-transform = Transform( 0.996539, -0.0831213, 0, 0.0831213, 0.996539, 0, 0, 0, 1, 0, -0.939296, -13.9667 )
+transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.475186, 0 )
 material_override = SubResource( 9 )
-width = 100.0
-depth = 100.0
+width = 500.0
+depth = 500.0

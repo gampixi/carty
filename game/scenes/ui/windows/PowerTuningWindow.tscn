@@ -1,0 +1,134 @@
+[gd_scene load_steps=4 format=2]
+
+[ext_resource path="res://scenes/ui/controls/LabeledHSlider.tscn" type="PackedScene" id=1]
+[ext_resource path="res://resources/power_tunings/test_car_power.tres" type="Resource" id=2]
+
+[sub_resource type="GDScript" id=1]
+script/source = "extends WindowDialog
+
+onready var slider_top_speed = $VBoxContainer/TopSpeedSlider/HSlider
+onready var slider_acceleration = $VBoxContainer/AccelerationSlider/HSlider
+onready var slider_power_curve = $VBoxContainer/PowerCurveSlider/HSlider
+onready var slider_brake_gain = $VBoxContainer/BrakeGainSlider/HSlider
+onready var slider_brake_release = $VBoxContainer/BrakeReleaseSlider/HSlider
+onready var slider_brake_power = $VBoxContainer/BrakePowerSlider/HSlider
+onready var slider_reverse_power = $VBoxContainer/ReversePowerSlider/HSlider
+
+export(NodePath) var car
+export(Resource) var base_tuning
+
+func _ready():
+	car = get_node(car)
+
+func _create_tuning():
+	var tune = base_tuning.duplicate()
+	tune.top_speed = slider_top_speed.value
+	tune.acceleration = slider_acceleration.value
+	tune.power_gain_curve = slider_power_curve.value
+	tune.brake_gain = slider_brake_gain.value
+	tune.brake_release = slider_brake_release.value
+	tune.brake_power = slider_brake_power.value
+	tune.reverse_power = slider_reverse_power.value
+	return tune
+
+
+func _on_HandlingTuningWindow_about_to_show():
+	var tune = car.power_tuning
+	slider_top_speed.value = tune.top_speed
+	slider_acceleration.value = tune.acceleration
+	slider_power_curve.value = tune.power_gain_curve
+	slider_brake_gain.value = tune.brake_gain
+	slider_brake_release.value = tune.brake_release
+	slider_brake_power.value = tune.brake_power
+	slider_reverse_power.value = tune.reverse_power
+
+
+func _on_ApplyButton_pressed():
+	car.power_tuning = _create_tuning()
+"
+
+[node name="PowerTuningWindow" type="WindowDialog"]
+margin_top = 24.0
+margin_right = 247.0
+margin_bottom = 447.0
+window_title = "Power Tuning"
+script = SubResource( 1 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+car = NodePath("../TestCar")
+base_tuning = ExtResource( 2 )
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+anchor_right = 1.0
+anchor_bottom = 0.025
+margin_left = 10.0
+margin_top = 10.0
+margin_right = -10.0
+margin_bottom = 75.0
+grow_horizontal = 2
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="TopSpeedSlider" parent="VBoxContainer" instance=ExtResource( 1 )]
+margin_right = 227.0
+var_name = "Top Speed"
+min_value = 1.0
+max_value = 500.0
+
+[node name="AccelerationSlider" parent="VBoxContainer" instance=ExtResource( 1 )]
+margin_top = 54.0
+margin_right = 227.0
+margin_bottom = 104.0
+var_name = "Acceleration"
+min_value = 1.0
+max_value = 2000.0
+
+[node name="PowerCurveSlider" parent="VBoxContainer" instance=ExtResource( 1 )]
+margin_top = 108.0
+margin_right = 227.0
+margin_bottom = 158.0
+var_name = "Power Curve"
+min_value = 0.01
+max_value = 10.0
+
+[node name="BrakeGainSlider" parent="VBoxContainer" instance=ExtResource( 1 )]
+margin_top = 162.0
+margin_right = 227.0
+margin_bottom = 212.0
+var_name = "Brake Gain Speed"
+min_value = 0.01
+max_value = 5.0
+
+[node name="BrakeReleaseSlider" parent="VBoxContainer" instance=ExtResource( 1 )]
+margin_top = 216.0
+margin_right = 227.0
+margin_bottom = 266.0
+var_name = "Brake Release Speed"
+min_value = 0.01
+max_value = 5.0
+
+[node name="BrakePowerSlider" parent="VBoxContainer" instance=ExtResource( 1 )]
+margin_top = 270.0
+margin_right = 227.0
+margin_bottom = 320.0
+var_name = "Brake Power"
+min_value = 1.0
+max_value = 100.0
+
+[node name="ReversePowerSlider" parent="VBoxContainer" instance=ExtResource( 1 )]
+margin_top = 324.0
+margin_right = 227.0
+margin_bottom = 374.0
+var_name = "Reverse Power"
+min_value = 1.0
+max_value = 1500.0
+
+[node name="ApplyButton" type="Button" parent="VBoxContainer"]
+margin_top = 378.0
+margin_right = 227.0
+margin_bottom = 398.0
+text = "Apply"
+[connection signal="about_to_show" from="." to="." method="_on_HandlingTuningWindow_about_to_show"]
+[connection signal="pressed" from="VBoxContainer/ApplyButton" to="." method="_on_ApplyButton_pressed"]

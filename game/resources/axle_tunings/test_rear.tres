@@ -4,11 +4,11 @@
 
 [resource]
 script = ExtResource( 1 )
-roll = 0.1
-slip = 1.0
-rest = 0.08
-travel = 0.15
-stiffness = 100
+roll = 0.5
+slip = 1.2
+rest = 0.01
+travel = 0.19
+stiffness = 75
 max_force = 6000
-compression = 0.88
-relaxation = 0.95
+compression = 1.0
+relaxation = 1.0
