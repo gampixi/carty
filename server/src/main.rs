@@ -1,33 +1,43 @@
 use std::net::{TcpStream, TcpListener};
 use std::io::prelude::*;
-use std::io::{Write, BufReader};
-use threadpool::ThreadPool;
+use std::io::{Write, BufReader, Cursor};
 use std::rc::Rc;
 use std::sync::{Mutex, Arc};
 use rand::prelude::*;
 use std::thread;
 use crossbeam::*;
+use byteorder::{BigEndian, ReadBytesExt};
+use num_derive::{FromPrimitive, ToPrimitive};
+use num_traits::{FromPrimitive, ToPrimitive};
+use rayon::prelude::*;
 
+#[derive(FromPrimitive, ToPrimitive, Debug)]
 enum ResponseHeader {
-    PlayerConnected = 0xAAEE,
-    PlayerDisconnected = 0xEEAA,
+    PlayerRegistered = 0xAAEE,
+    PlayerUnregistered = 0xEEAA,
     Error = 0xDEAD
 }
 
+#[derive(FromPrimitive, ToPrimitive, Debug)]
 enum ResponseErrorCode {
     UnknownRequest = 0xAAAA,
-    NameAlreadyUsed = 0xF00F
+    NameAlreadyUsed = 0xF00F,
+    Unauthorized = 0xFACC,
+    Irrelevant = 0x0101
 }
 
+#[derive(FromPrimitive, ToPrimitive, Debug)]
 enum RequestHeader {
-    ConnectPlayer = 0xFEFE,
-    DisconnectPlayer = 0xEFEF
+    RegisterPlayer = 0xFEFE,
+    UnregisterPlayer = 0xEFEF
 }
 
+#[derive(Debug)]
 struct CartyClient {
     id: u64,
     secret: u64,
     name: String,
+    registered: bool,
 }
 
 struct CartyRoom {
@@ -77,11 +87,42 @@ impl CartyServer {
         }
     }
 
-    fn add_client(&self, name: &str) -> Arc<Mutex<CartyClient>> {
+    fn find_client(&self, name: &str) -> Option<Arc<Mutex<CartyClient>>> {
+        let clients = self.clients.lock().unwrap();
+        let result = clients.par_iter().find_any(|&c| c.lock().unwrap().name == name);
+        match result {
+            Some(c) => return Some(c.clone()),
+            None => return None
+        }
+    }
+
+    fn find_client_secure(&self, id: u64, secret: u64) -> Result<Arc<Mutex<CartyClient>>, ResponseErrorCode> {
+        let clients = self.clients.lock().unwrap();
+        let result = clients.par_iter().find_first(|&c| c.lock().unwrap().id == id);
+        match result {
+            Some(c) => {
+                if c.lock().unwrap().secret == secret {
+                    return Ok(c.clone())
+                }
+                return Err(ResponseErrorCode::Unauthorized)
+            },
+            None => return Err(ResponseErrorCode::Irrelevant)
+        }
+    }
+
+    fn add_client(&self, name: &str) -> Result<Arc<Mutex<CartyClient>>, ResponseErrorCode> {
+        // Look if a player with this name is already registered
+        let search = self.find_client(name);
+        match search {
+            Some(c) => return Err(ResponseErrorCode::NameAlreadyUsed),
+            None => (),
+        }
+
         let new_client = CartyClient {
             name: String::from(name),
             id: *self.current_user_id.lock().unwrap(),
             secret: rand::random::<u64>(),
+            registered: true
         };
         {
             let mut user_ids = self.current_user_id.lock().unwrap();
@@ -92,25 +133,77 @@ impl CartyServer {
             let mut clients = self.clients.lock().unwrap();
             clients.push(new_client.clone());
         }
-        new_client.clone()
+        Ok(new_client.clone())
     }
 
     fn handle_request(&self, mut stream: TcpStream) {
         let mut reader = BufReader::new(stream.try_clone().unwrap());
-        let mut data = String::new();
-        let len = reader.read_line(&mut data).unwrap();
-        println!("Incoming request: {}", data.trim());
+        let mut header= [0; 2];
+        reader.read_exact(&mut header).unwrap();
+        let header = Cursor::new(header).read_u16::<BigEndian>().unwrap();
+        
         thread::sleep(std::time::Duration::from_millis(1000));
 
-        let new_client = self.add_client(&data);
-        {
-            let new_client = new_client.lock().unwrap();
+        match FromPrimitive::from_u16(header) {
+            Some(RequestHeader::RegisterPlayer) => {
+                let mut new_name = String::new();
+                reader.read_line(&mut new_name).unwrap();
+                new_name = new_name.trim().to_string();
+                let new_client = self.add_client(&new_name);
+                match new_client {
+                    Ok(client) => {
+                        let new_client_secret: u64;
+                        {
+                            let new_client = client.lock().unwrap();
+                            new_client_secret = new_client.secret;
+                        }
 
-            stream.write(&HEADER_PLAYER_ADD.to_be_bytes());
-            stream.write(&new_client.secret.to_be_bytes()).expect("Response failed");
-            println!("Request finished: {}", &new_client.id);
+                        stream.write(&(ResponseHeader::PlayerRegistered as u16).to_be_bytes()).expect("Response failed");
+                        stream.write(&new_client_secret.to_be_bytes()).expect("Response failed");
+                        println!("Registered player: {:?}", &client.lock().unwrap());
+                    },
+                    Err(error) => {
+                        println!("Error occurred during player register: {:?}", &error);
+                        stream.write(&(ResponseHeader::Error as u16).to_be_bytes()).expect("Response failed");
+                        stream.write(&(error as u16).to_be_bytes()).expect("Response failed");
+                    }
+                }
+            }
+            Some(RequestHeader::UnregisterPlayer) => {
+                let mut id = [0; 8];
+                let mut secret = [0; 8];
+                reader.read_exact(&mut id).unwrap();
+                let id = Cursor::new(id).read_u64::<BigEndian>().unwrap();
+                reader.read_exact(&mut secret).unwrap();
+                let secret = Cursor::new(secret).read_u64::<BigEndian>().unwrap();
+                let this_client = self.find_client_secure(id, secret);
+                println!("Attempting player unregister: ID: {}, secret: {}", id, secret);
+                match this_client {
+                    Ok(client) => {
+                        {
+                            let mut clients = self.clients.lock().unwrap();
+                            let client_id = client.lock().unwrap().id;
+                            let pos = clients.par_iter().position_first(|c| c.lock().unwrap().id == client_id).unwrap();
+                            clients.remove(pos);
+                        }
+                        stream.write(&(ResponseHeader::PlayerUnregistered as u16).to_be_bytes()).expect("Response failed");
+                        println!("Unregistered player: {:?}", id);
+                    },
+                    Err(error) => {
+                        println!("Error occurred during player unregister: {:?}", &error);
+                        stream.write(&(ResponseHeader::Error as u16).to_be_bytes()).expect("Response failed");
+                        stream.write(&(error as u16).to_be_bytes()).expect("Response failed");
+                    }
+                }
+            }
+            None => {
+                println!("Unknown request received: {:?}", header);
+                stream.write(&(ResponseHeader::Error as u16).to_be_bytes()).expect("Response failed");
+                stream.write(&(ResponseErrorCode::UnknownRequest as u16).to_be_bytes()).expect("Response failed");
+            }
         }
-        thread::sleep(std::time::Duration::from_millis(1000));
+
+        
         stream.flush().unwrap();
     }
 }
