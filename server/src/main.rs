@@ -13,23 +13,31 @@ use rayon::prelude::*;
 
 #[derive(FromPrimitive, ToPrimitive, Debug)]
 enum ResponseHeader {
-    PlayerRegistered = 0xAAEE,
-    PlayerUnregistered = 0xEEAA,
+    Good = 0x1111,
     Error = 0xDEAD
 }
 
 #[derive(FromPrimitive, ToPrimitive, Debug)]
 enum ResponseErrorCode {
-    UnknownRequest = 0xAAAA,
-    NameAlreadyUsed = 0xF00F,
-    Unauthorized = 0xFACC,
-    Irrelevant = 0x0101
+    UnknownRequest = 0xBEEF,
+    NameAlreadyUsed = 0xE001,
+    Unauthorized = 0xE002,
+    Irrelevant = 0xE003,
+    Illegal = 0xE004,
+    MiscError = 0xEFFF,
 }
 
 #[derive(FromPrimitive, ToPrimitive, Debug)]
 enum RequestHeader {
-    RegisterPlayer = 0xFEFE,
-    UnregisterPlayer = 0xEFEF
+    RegisterPlayer = 0x0001,
+    UnregisterPlayer = 0x000F,
+    ConfirmPlayerRegister = 0x0002,
+    CreateRoom = 0x1001,
+    JoinRoom = 0x1011,
+    LeaveRoom = 0x101F,
+    GetRoomOverview = 0x1100,
+    GetRoomPlayers = 0x1101,
+    GetRoomGameState = 0x1102,
 }
 
 #[derive(Debug)]
@@ -38,14 +46,18 @@ struct CartyClient {
     secret: u64,
     name: String,
     registered: bool,
+    room: Option<u64>,
 }
 
 struct CartyRoom {
+    id: u64,
+    name: String,
+    max_clients: u16,
     clients: Vec<Arc<CartyClient>>,
 }
 
 struct CartyServer {
-    current_user_id: Mutex<u64>,
+    current_seq_id: Mutex<u64>,
     clients: Mutex<Vec<Arc<Mutex<CartyClient>>>>,
     rooms: Mutex<Vec<CartyRoom>>
 }
@@ -107,7 +119,7 @@ impl CartyConnection {
 impl CartyServer {
     fn new() -> CartyServer {
         CartyServer {
-            current_user_id: Mutex::new(1),
+            current_seq_id: Mutex::new(1),
             clients: Mutex::new(vec![]),
             rooms: Mutex::new(vec![]),
         }
@@ -146,12 +158,13 @@ impl CartyServer {
 
         let new_client = CartyClient {
             name: String::from(name),
-            id: *self.current_user_id.lock().unwrap(),
+            id: *self.current_seq_id.lock().unwrap(),
             secret: rand::random::<u64>(),
-            registered: true
+            registered: false,
+            room: None
         };
         {
-            let mut user_ids = self.current_user_id.lock().unwrap();
+            let mut user_ids = self.current_seq_id.lock().unwrap();
             *user_ids += 1;
         }
         let new_client = Arc::new(Mutex::new(new_client));
@@ -201,12 +214,15 @@ impl CartyServer {
                 match new_client {
                     Ok(client) => {
                         let new_client_secret: u64;
+                        let new_client_id: u64;
                         {
                             let new_client = client.lock().unwrap();
+                            new_client_id = new_client.id;
                             new_client_secret = new_client.secret;
                         }
 
-                        stream.write(&(ResponseHeader::PlayerRegistered as u16).to_be_bytes()).expect("Response failed");
+                        stream.write(&(ResponseHeader::Good as u16).to_be_bytes()).expect("Response failed");
+                        stream.write(&new_client_id.to_be_bytes()).expect("Response failed");
                         stream.write(&new_client_secret.to_be_bytes()).expect("Response failed");
                         println!("Registered player: {:?}", &client.lock().unwrap());
                     },
@@ -225,7 +241,6 @@ impl CartyServer {
                 reader.read_exact(&mut secret).unwrap();
                 let secret = Cursor::new(secret).read_u64::<BigEndian>().unwrap();
                 let this_client = self.find_client_secure(id, secret);
-                println!("Attempting player unregister: ID: {}, secret: {}", id, secret);
                 match this_client {
                     Ok(client) => {
                         {
@@ -234,8 +249,9 @@ impl CartyServer {
                             let pos = clients.par_iter().position_first(|c| c.lock().unwrap().id == client_id).unwrap();
                             clients.remove(pos);
                         }
-                        stream.write(&(ResponseHeader::PlayerUnregistered as u16).to_be_bytes()).expect("Response failed");
-                        println!("Unregistered player: {:?}", id);
+                        stream.write(&(ResponseHeader::Good as u16).to_be_bytes()).expect("Response failed");
+                        println!("Unregistered player: {:?}, player was fully registered: {:?}", id, client.lock().unwrap().registered);
+
                     },
                     Err(error) => {
                         println!("Error occurred during player unregister: {:?}", &error);
@@ -243,6 +259,32 @@ impl CartyServer {
                         stream.write(&(error as u16).to_be_bytes()).expect("Response failed");
                     }
                 }
+            }
+            Some(RequestHeader::ConfirmPlayerRegister) => {
+                let mut id = [0; 8];
+                let mut secret = [0; 8];
+                reader.read_exact(&mut id).unwrap();
+                let id = Cursor::new(id).read_u64::<BigEndian>().unwrap();
+                reader.read_exact(&mut secret).unwrap();
+                let secret = Cursor::new(secret).read_u64::<BigEndian>().unwrap();
+                let this_client = self.find_client_secure(id, secret);
+                match this_client {
+                    Ok(client) => {
+                        client.lock().unwrap().registered = true;
+                        stream.write(&(ResponseHeader::Good as u16).to_be_bytes()).expect("Response failed");
+                        println!("Player register completed: {:?}", id);
+                    },
+                    Err(error) => {
+                        println!("Error occurred during player unregister: {:?}", &error);
+                        stream.write(&(ResponseHeader::Error as u16).to_be_bytes()).expect("Response failed");
+                        stream.write(&(error as u16).to_be_bytes()).expect("Response failed");
+                    }
+                }
+            }
+            Some(_) => {
+                println!("Unimplemented request received: {:?}", header);
+                stream.write(&(ResponseHeader::Error as u16).to_be_bytes()).expect("Response failed");
+                stream.write(&(ResponseErrorCode::UnknownRequest as u16).to_be_bytes()).expect("Response failed");
             }
             None => {
                 println!("Unknown request received: {:?}", header);
