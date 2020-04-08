@@ -1,6 +1,6 @@
-use std::net::{TcpStream, TcpListener};
+use std::net::{TcpStream, TcpListener, UdpSocket, SocketAddr};
 use std::io::prelude::*;
-use std::io::{Write, BufReader, Cursor};
+use std::io::{Write, BufReader, Cursor, ErrorKind};
 use std::rc::Rc;
 use std::sync::{Mutex, Arc};
 use rand::prelude::*;
@@ -53,27 +53,53 @@ struct CartyServer {
 struct CartyConnection {
     server: Arc<CartyServer>,
     tcp: TcpListener,
+    udp: Arc<Mutex<UdpSocket>>,
 }
 
 impl CartyConnection { 
     fn new(address: &str, server: CartyServer) -> CartyConnection {
         let tcp_listener = TcpListener::bind(&address).unwrap();
+        let udp_socket = UdpSocket::bind(&address).unwrap();
+        udp_socket.set_nonblocking(true).unwrap();
 
         CartyConnection {
             tcp: tcp_listener,
+            udp: Arc::new(Mutex::new(udp_socket)),
             server: Arc::new(server),
         }
     }
 
     fn handle_requests(&self) {
         crossbeam::scope(|s| {
-            for stream in self.tcp.incoming() {
-                println!("New request incoming!");
-                let stream = stream.unwrap();   
-                s.spawn(|_| {
-                    self.server.clone().handle_request(stream);
-                });
-            }
+            s.spawn(|t| {
+                for stream in self.tcp.incoming() {
+                    let stream = stream.unwrap();   
+                    t.spawn(|_| {
+                        self.server.clone().handle_request(stream);
+                    });
+                }
+            });
+
+            s.spawn(|u| {
+                let sleep_duration = std::time::Duration::from_micros(1);
+                loop {
+                    let mut buf = [0; 512];
+                    let result = self.udp.lock().unwrap().recv_from(&mut buf);
+                    match result {
+                        Ok(res) => {
+                            let (num_bytes, origin) = res;
+                            println!("Got shit :thinking:");
+                            u.spawn(move |_| {
+                                self.server.handle_udp(&buf, self.udp.clone(), &origin);
+                            });
+                        },
+                        Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                            thread::sleep(sleep_duration);
+                        }
+                        Err(e) => panic!("UDP IO error: {}", e),
+                    }
+                }
+            });
         }).unwrap();
     }
 }
@@ -136,13 +162,35 @@ impl CartyServer {
         Ok(new_client.clone())
     }
 
+    fn handle_udp(&self, data: &[u8], socket: Arc<Mutex<UdpSocket>>, origin: &SocketAddr) {
+        let mut reader = BufReader::new(data);
+        let mut header= [0; 2];
+        reader.read_exact(&mut header).unwrap();
+        let header = Cursor::new(header).read_u16::<BigEndian>().unwrap();
+        println!("Received some junk on UDP, lets sleep for a while now");
+        thread::sleep(std::time::Duration::from_secs(1));
+        
+        match FromPrimitive::from_u16(header) {
+            Some(RequestHeader::RegisterPlayer) => {
+                println!("It was RegisterPlayer!");
+            },
+            _ => {
+                println!("It was some other shit");
+            }
+        }
+
+        let mut new_name = String::new();
+        reader.read_line(&mut new_name).unwrap();
+        new_name = new_name.trim().to_string();
+
+        println!("The rest of data: {}", new_name);
+    }
+
     fn handle_request(&self, mut stream: TcpStream) {
         let mut reader = BufReader::new(stream.try_clone().unwrap());
         let mut header= [0; 2];
         reader.read_exact(&mut header).unwrap();
         let header = Cursor::new(header).read_u16::<BigEndian>().unwrap();
-        
-        thread::sleep(std::time::Duration::from_millis(1000));
 
         match FromPrimitive::from_u16(header) {
             Some(RequestHeader::RegisterPlayer) => {
@@ -203,7 +251,6 @@ impl CartyServer {
             }
         }
 
-        
         stream.flush().unwrap();
     }
 }
