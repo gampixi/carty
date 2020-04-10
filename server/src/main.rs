@@ -86,8 +86,15 @@ impl CartyConnection {
             s.spawn(|t| {
                 for stream in self.tcp.incoming() {
                     let stream = stream.unwrap();   
-                    t.spawn(|_| {
-                        self.server.clone().handle_request(stream);
+                    t.spawn(move |_| {
+                        match self.server.clone().handle_request(&stream) {
+                            Ok(_) => {
+                                // All is good :)
+                            },
+                            Err(err) => {
+                                eprintln!("An error occured while processing request: {:?}", err);
+                            }
+                        }
                     });
                 }
             });
@@ -102,7 +109,14 @@ impl CartyConnection {
                             let (num_bytes, origin) = res;
                             println!("Got shit :thinking:");
                             u.spawn(move |_| {
-                                self.server.handle_udp(&buf, self.udp.clone(), &origin);
+                                match self.server.handle_udp(&buf, self.udp.clone(), &origin) {
+                                    Ok(_) => {
+                                        // All is good :)
+                                    },
+                                    Err(err) => {
+                                        eprintln!("An error occured while processing request: {:?}", err);
+                                    }
+                                }
                             });
                         },
                         Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
@@ -175,7 +189,7 @@ impl CartyServer {
         Ok(new_client.clone())
     }
 
-    fn handle_udp(&self, data: &[u8], socket: Arc<Mutex<UdpSocket>>, origin: &SocketAddr) {
+    fn handle_udp(&self, data: &[u8], socket: Arc<Mutex<UdpSocket>>, origin: &SocketAddr) -> Result<(), ResponseErrorCode> {
         let mut reader = BufReader::new(data);
         let mut header= [0; 2];
         reader.read_exact(&mut header).unwrap();
@@ -197,9 +211,10 @@ impl CartyServer {
         new_name = new_name.trim().to_string();
 
         println!("The rest of data: {}", new_name);
+        Ok(())
     }
 
-    fn handle_request(&self, mut stream: TcpStream) {
+    fn handle_request(&self, mut stream: &TcpStream) -> Result<(), ResponseErrorCode> {
         let mut reader = BufReader::new(stream.try_clone().unwrap());
         let mut header= [0; 2];
         reader.read_exact(&mut header).unwrap();
@@ -210,28 +225,19 @@ impl CartyServer {
                 let mut new_name = String::new();
                 reader.read_line(&mut new_name).unwrap();
                 new_name = new_name.trim().to_string();
-                let new_client = self.add_client(&new_name);
-                match new_client {
-                    Ok(client) => {
-                        let new_client_secret: u64;
-                        let new_client_id: u64;
-                        {
-                            let new_client = client.lock().unwrap();
-                            new_client_id = new_client.id;
-                            new_client_secret = new_client.secret;
-                        }
-
-                        stream.write(&(ResponseHeader::Good as u16).to_be_bytes()).expect("Response failed");
-                        stream.write(&new_client_id.to_be_bytes()).expect("Response failed");
-                        stream.write(&new_client_secret.to_be_bytes()).expect("Response failed");
-                        println!("Registered player: {:?}", &client.lock().unwrap());
-                    },
-                    Err(error) => {
-                        println!("Error occurred during player register: {:?}", &error);
-                        stream.write(&(ResponseHeader::Error as u16).to_be_bytes()).expect("Response failed");
-                        stream.write(&(error as u16).to_be_bytes()).expect("Response failed");
-                    }
+                let new_client = self.add_client(&new_name)?;
+                let new_client_secret: u64;
+                let new_client_id: u64;
+                {
+                    let new_client = new_client.lock().unwrap();
+                    new_client_id = new_client.id;
+                    new_client_secret = new_client.secret;
                 }
+
+                stream.write(&(ResponseHeader::Good as u16).to_be_bytes()).expect("Response failed");
+                stream.write(&new_client_id.to_be_bytes()).expect("Response failed");
+                stream.write(&new_client_secret.to_be_bytes()).expect("Response failed");
+                println!("Registered player: {:?}", &new_client.lock().unwrap());
             }
             Some(RequestHeader::UnregisterPlayer) => {
                 let mut id = [0; 8];
@@ -240,25 +246,15 @@ impl CartyServer {
                 let id = Cursor::new(id).read_u64::<BigEndian>().unwrap();
                 reader.read_exact(&mut secret).unwrap();
                 let secret = Cursor::new(secret).read_u64::<BigEndian>().unwrap();
-                let this_client = self.find_client_secure(id, secret);
-                match this_client {
-                    Ok(client) => {
-                        {
-                            let mut clients = self.clients.lock().unwrap();
-                            let client_id = client.lock().unwrap().id;
-                            let pos = clients.par_iter().position_first(|c| c.lock().unwrap().id == client_id).unwrap();
-                            clients.remove(pos);
-                        }
-                        stream.write(&(ResponseHeader::Good as u16).to_be_bytes()).expect("Response failed");
-                        println!("Unregistered player: {:?}, player was fully registered: {:?}", id, client.lock().unwrap().registered);
-
-                    },
-                    Err(error) => {
-                        println!("Error occurred during player unregister: {:?}", &error);
-                        stream.write(&(ResponseHeader::Error as u16).to_be_bytes()).expect("Response failed");
-                        stream.write(&(error as u16).to_be_bytes()).expect("Response failed");
-                    }
+                let this_client = self.find_client_secure(id, secret)?;
+                {
+                    let mut clients = self.clients.lock().unwrap();
+                    let client_id = this_client.lock().unwrap().id;
+                    let pos = clients.par_iter().position_first(|c| c.lock().unwrap().id == client_id).unwrap();
+                    clients.remove(pos);
                 }
+                stream.write(&(ResponseHeader::Good as u16).to_be_bytes()).expect("Response failed");
+                println!("Unregistered player: {:?}, player was fully registered: {:?}", id, this_client.lock().unwrap().registered);
             }
             Some(RequestHeader::ConfirmPlayerRegister) => {
                 let mut id = [0; 8];
@@ -267,33 +263,21 @@ impl CartyServer {
                 let id = Cursor::new(id).read_u64::<BigEndian>().unwrap();
                 reader.read_exact(&mut secret).unwrap();
                 let secret = Cursor::new(secret).read_u64::<BigEndian>().unwrap();
-                let this_client = self.find_client_secure(id, secret);
-                match this_client {
-                    Ok(client) => {
-                        client.lock().unwrap().registered = true;
-                        stream.write(&(ResponseHeader::Good as u16).to_be_bytes()).expect("Response failed");
-                        println!("Player register completed: {:?}", id);
-                    },
-                    Err(error) => {
-                        println!("Error occurred during player unregister: {:?}", &error);
-                        stream.write(&(ResponseHeader::Error as u16).to_be_bytes()).expect("Response failed");
-                        stream.write(&(error as u16).to_be_bytes()).expect("Response failed");
-                    }
-                }
+                let this_client = self.find_client_secure(id, secret)?;
+                this_client.lock().unwrap().registered = true;
+                stream.write(&(ResponseHeader::Good as u16).to_be_bytes()).expect("Response failed");
+                println!("Player register completed: {:?}", id);
             }
             Some(_) => {
-                println!("Unimplemented request received: {:?}", header);
-                stream.write(&(ResponseHeader::Error as u16).to_be_bytes()).expect("Response failed");
-                stream.write(&(ResponseErrorCode::UnknownRequest as u16).to_be_bytes()).expect("Response failed");
+                return Err(ResponseErrorCode::UnknownRequest);
             }
             None => {
-                println!("Unknown request received: {:?}", header);
-                stream.write(&(ResponseHeader::Error as u16).to_be_bytes()).expect("Response failed");
-                stream.write(&(ResponseErrorCode::UnknownRequest as u16).to_be_bytes()).expect("Response failed");
+                return Err(ResponseErrorCode::UnknownRequest);
             }
         }
 
         stream.flush().unwrap();
+        return Ok(());
     }
 }
 
