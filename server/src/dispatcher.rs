@@ -4,6 +4,7 @@ use std::thread;
 use std::io::{ErrorKind};
 
 use crate::server::Server;
+use crate::actions;
 
 pub struct Dispatcher {
     server: Arc<Server>,
@@ -25,6 +26,7 @@ impl Dispatcher {
     }
 
     pub fn handle_requests(&self) {
+        println!("Spinnin' up threads...");
         crossbeam::scope(|s| {
             s.spawn(|t| {
                 for stream in self.tcp.incoming() {
@@ -69,6 +71,16 @@ impl Dispatcher {
                     }
                 }
             });
+
+            s.spawn(|lp| {
+                let sleep_duration = std::time::Duration::from_micros(1);
+                loop {
+                    actions::room_maintenance(&self.server);
+                    thread::sleep(sleep_duration);
+                }
+            });
+            
+            println!("Ready :]\n");
         }).unwrap();
     }
 }

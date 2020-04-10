@@ -1,46 +1,48 @@
 use std::net::{TcpStream, UdpSocket, SocketAddr};
-use std::sync::{Mutex, Arc};
+use std::sync::{Mutex, Arc, RwLock};
 use std::thread;
 use rayon::prelude::*;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::io::prelude::*;
 use std::io::{Write, BufReader, Cursor};
 use num_traits::{FromPrimitive};
+use std::time::SystemTime;
 
 use crate::client::Client;
 use crate::room::Room;
 use crate::magic::*;
+use crate::actions;
 
 pub struct Server {
     current_seq_id: Mutex<u64>,
-    clients: Mutex<Vec<Arc<Mutex<Client>>>>,
-    rooms: Mutex<Vec<Room>>
+    pub clients: RwLock<Vec<Arc<RwLock<Client>>>>,
+    pub rooms: RwLock<Vec<Arc<RwLock<Room>>>>
 }
 
 impl Server {
     pub fn new() -> Server {
         Server {
             current_seq_id: Mutex::new(1),
-            clients: Mutex::new(vec![]),
-            rooms: Mutex::new(vec![]),
+            clients: RwLock::new(vec![]),
+            rooms: RwLock::new(vec![]),
         }
     }
 
-    pub fn find_client(&self, name: &str) -> Option<Arc<Mutex<Client>>> {
-        let clients = self.clients.lock().unwrap();
-        let result = clients.par_iter().find_any(|&c| c.lock().unwrap().name == name);
+    pub fn find_client(&self, name: &str) -> Option<Arc<RwLock<Client>>> {
+        let clients = self.clients.read().unwrap();
+        let result = clients.par_iter().find_any(|&c| c.read().unwrap().name == name);
         match result {
             Some(c) => return Some(c.clone()),
             None => return None
         }
     }
 
-    pub fn find_client_secure(&self, id: u64, secret: u64) -> Result<Arc<Mutex<Client>>, ResponseErrorCode> {
-        let clients = self.clients.lock().unwrap();
-        let result = clients.par_iter().find_first(|&c| c.lock().unwrap().id == id);
+    pub fn find_client_secure(&self, id: u64, secret: u64) -> Result<Arc<RwLock<Client>>, ResponseErrorCode> {
+        let clients = self.clients.read().unwrap();
+        let result = clients.par_iter().find_first(|&c| c.read().unwrap().id == id);
         match result {
             Some(c) => {
-                if c.lock().unwrap().secret == secret {
+                if c.read().unwrap().secret == secret {
                     return Ok(c.clone())
                 }
                 return Err(ResponseErrorCode::Unauthorized)
@@ -49,11 +51,11 @@ impl Server {
         }
     }
 
-    pub fn add_client(&self, name: &str) -> Result<Arc<Mutex<Client>>, ResponseErrorCode> {
+    pub fn add_client(&self, name: &str) -> Result<Arc<RwLock<Client>>, ResponseErrorCode> {
         // Look if a player with this name is already registered
         let search = self.find_client(name);
         match search {
-            Some(c) => return Err(ResponseErrorCode::NameAlreadyUsed),
+            Some(_c) => return Err(ResponseErrorCode::NameAlreadyUsed),
             None => (),
         }
 
@@ -68,12 +70,85 @@ impl Server {
             let mut user_ids = self.current_seq_id.lock().unwrap();
             *user_ids += 1;
         }
-        let new_client = Arc::new(Mutex::new(new_client));
+        let new_client = Arc::new(RwLock::new(new_client));
         {
-            let mut clients = self.clients.lock().unwrap();
+            let mut clients = self.clients.write().unwrap();
             clients.push(new_client.clone());
         }
         Ok(new_client.clone())
+    }
+
+    pub fn remove_client(&self, client: Arc<RwLock<Client>>) -> Result<(), ResponseErrorCode> {
+        let mut clients = self.clients.write().unwrap();
+        let client_id = client.read().unwrap().id;
+        match clients.par_iter().position_first(|c| c.read().unwrap().id == client_id) {
+            Some(pos) => {
+                clients.remove(pos);
+            },
+            None => {
+                return Err(ResponseErrorCode::MiscError);
+            }
+        }
+        return Ok(());
+    }
+
+    pub fn find_room(&self, name: &str) -> Option<Arc<RwLock<Room>>> {
+        let rooms = self.rooms.read().unwrap();
+        let result = rooms.par_iter().find_any(|&c| c.read().unwrap().name == name);
+        match result {
+            Some(c) => return Some(c.clone()),
+            None => return None
+        }
+    }
+
+    pub fn find_room_id(&self, id: u64) -> Option<Arc<RwLock<Room>>> {
+        let rooms = self.rooms.read().unwrap();
+        let result = rooms.par_iter().find_any(|&c| c.read().unwrap().id == id);
+        match result {
+            Some(c) => return Some(c.clone()),
+            None => return None
+        }
+    }
+
+    pub fn add_room(&self, name: &str) -> Result<Arc<RwLock<Room>>, ResponseErrorCode> {
+        // Look if a room with this name is already registered
+        let search = self.find_room(name);
+        match search {
+            Some(_c) => return Err(ResponseErrorCode::NameAlreadyUsed),
+            None => (),
+        }
+
+        let new_room = Room {
+            name: String::from(name),
+            id: *self.current_seq_id.lock().unwrap(),
+            max_clients: 8,
+            clients: Mutex::new(vec![]),
+            refresh_time: SystemTime::now()
+        };
+        {
+            let mut ids = self.current_seq_id.lock().unwrap();
+            *ids += 1;
+        }
+        let new_room = Arc::new(RwLock::new(new_room));
+        {
+            let mut rooms = self.rooms.write().unwrap();
+            rooms.push(new_room.clone());
+        }
+        Ok(new_room.clone())
+    }
+
+    pub fn remove_room(&self, room: Arc<RwLock<Room>>) -> Result<(), ResponseErrorCode> {
+        let mut rooms = self.rooms.write().unwrap();
+        let room_id = room.read().unwrap().id;
+        match rooms.par_iter().position_first(|c| c.read().unwrap().id == room_id) {
+            Some(pos) => {
+                rooms.remove(pos);
+            },
+            None => {
+                return Err(ResponseErrorCode::MiscError);
+            }
+        }
+        return Ok(());
     }
 
     pub fn handle_udp(&self, data: &[u8], socket: Arc<Mutex<UdpSocket>>, origin: &SocketAddr) -> Result<(), ResponseErrorCode> {
@@ -112,19 +187,7 @@ impl Server {
                 let mut new_name = String::new();
                 reader.read_line(&mut new_name).unwrap();
                 new_name = new_name.trim().to_string();
-                let new_client = self.add_client(&new_name)?;
-                let new_client_secret: u64;
-                let new_client_id: u64;
-                {
-                    let new_client = new_client.lock().unwrap();
-                    new_client_id = new_client.id;
-                    new_client_secret = new_client.secret;
-                }
-
-                stream.write(&(ResponseHeader::Good as u16).to_be_bytes()).expect("Response failed");
-                stream.write(&new_client_id.to_be_bytes()).expect("Response failed");
-                stream.write(&new_client_secret.to_be_bytes()).expect("Response failed");
-                println!("Registered player: {:?}", &new_client.lock().unwrap());
+                actions::register_client(&new_name, &self, &stream)?;
             }
             Some(RequestHeader::UnregisterPlayer) => {
                 let mut id = [0; 8];
@@ -133,15 +196,7 @@ impl Server {
                 let id = Cursor::new(id).read_u64::<BigEndian>().unwrap();
                 reader.read_exact(&mut secret).unwrap();
                 let secret = Cursor::new(secret).read_u64::<BigEndian>().unwrap();
-                let this_client = self.find_client_secure(id, secret)?;
-                {
-                    let mut clients = self.clients.lock().unwrap();
-                    let client_id = this_client.lock().unwrap().id;
-                    let pos = clients.par_iter().position_first(|c| c.lock().unwrap().id == client_id).unwrap();
-                    clients.remove(pos);
-                }
-                stream.write(&(ResponseHeader::Good as u16).to_be_bytes()).expect("Response failed");
-                println!("Unregistered player: {:?}, player was fully registered: {:?}", id, this_client.lock().unwrap().registered);
+                actions::unregister_client(id, secret, &self, &stream)?;
             }
             Some(RequestHeader::ConfirmPlayerRegister) => {
                 let mut id = [0; 8];
@@ -150,10 +205,19 @@ impl Server {
                 let id = Cursor::new(id).read_u64::<BigEndian>().unwrap();
                 reader.read_exact(&mut secret).unwrap();
                 let secret = Cursor::new(secret).read_u64::<BigEndian>().unwrap();
-                let this_client = self.find_client_secure(id, secret)?;
-                this_client.lock().unwrap().registered = true;
-                stream.write(&(ResponseHeader::Good as u16).to_be_bytes()).expect("Response failed");
-                println!("Player register completed: {:?}", id);
+                actions::confirm_client_register(id, secret, &self, &stream)?;
+            }
+            Some(RequestHeader::CreateRoom) => {
+                let mut id = [0; 8];
+                let mut secret = [0; 8];
+                let mut new_name = String::new();
+                reader.read_exact(&mut id).unwrap();
+                let id = Cursor::new(id).read_u64::<BigEndian>().unwrap();
+                reader.read_exact(&mut secret).unwrap();
+                let secret = Cursor::new(secret).read_u64::<BigEndian>().unwrap();
+                reader.read_line(&mut new_name).unwrap();
+                new_name = new_name.trim().to_string();
+                actions::create_room(id, secret, &new_name, &self, &stream)?;
             }
             Some(_) => {
                 return Err(ResponseErrorCode::UnknownRequest);
